@@ -1,0 +1,1 @@
+Code works only for Python 3.10
