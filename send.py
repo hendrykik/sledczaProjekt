@@ -17,3 +17,4 @@ This is a test email sent from Python.
 with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
     server.sendmail("sender@example.com", "receiver@example.com", message)
     print("Email sent successfully!")
+    
