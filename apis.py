@@ -3,6 +3,7 @@ import requests
 HYBRID_API_KEY = "jjobpld635c09646twoqqvf98eaf8c7bjoeydv5gda5b52cfkc3txfic571c3e0b"
 HYBRID_API_URL = "https://www.hybrid-analysis.com/api/v2/quick-scan/file"
 HYBRID_REPORT_URL = "https://www.hybrid-analysis.com/api/v2/report/"
+CIRCL_URL = "https://hashlookup.circl.lu/api/"
 
 def checkHashWithCircl(hash_value):
     """
@@ -11,7 +12,7 @@ def checkHashWithCircl(hash_value):
     :param hash_value: Hash (MD5, SHA1, SHA256) pliku do sprawdzenia.
     :return: Słownik z wynikami lub None, jeśli hash nie został znaleziony.
     """
-    url = f"https://hashlookup.circl.lu/api/{hash_value}"
+    url = f"{CIRCL_URL}/{hash_value}"
     try:
         response = requests.get(url)
         if response.status_code == 200:
@@ -55,7 +56,8 @@ def checkReports(reportIds):
         "User-Agent": "Falcon Sandbox",
         "api-key": HYBRID_API_KEY
     }
-    maliciousCount = 0  
+    maliciousCount = 0
+    suspiciousCount = 0
     totalReports = len(reportIds)
     totalThreatScore = 0
 
@@ -67,7 +69,11 @@ def checkReports(reportIds):
                 data = response.json()
                 if data.get("verdict") == "malicious":
                     maliciousCount += 1
+                if data.get("verdict") == "suspicious":
+                    suspiciousCount += 1
                 threatScore = data.get("threat_score", 0)
+                if threatScore is None:
+                    threatScore = 0
                 totalThreatScore += threatScore
             else:
                 print(f"Błąd podczas pobierania raportu {reportId}: {response.status_code}")
@@ -76,8 +82,9 @@ def checkReports(reportIds):
 
     tScore = totalThreatScore / totalReports if totalReports > 0 else 0
     print(f"Wynik: {maliciousCount}/{totalReports} raportów oznaczonych jako 'malicious'.")
+    print(f"Wynik: {suspiciousCount}/{totalReports} raportów oznaczonych jako 'suspicious'.")
     print(f"Średni threat_score: {tScore:.2f}")
-    return maliciousCount, totalReports, tScore
+    return maliciousCount, totalReports, tScore, suspiciousCount
 
 def fileCheck(file, filename):
     response = checkFileWithHybridanalysis(file, filename)
@@ -85,3 +92,4 @@ def fileCheck(file, filename):
     if reportIds:
         return checkReports(reportIds)
     return 0, 0, 0
+

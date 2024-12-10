@@ -30,8 +30,8 @@ def sendSimpleEmail():
 
 def sendEmailWithAttachment():
     """Wysyła e-mail z plikiem z repozytorium."""
-    subject = "Test Email with OnlineFix64.dll"
-    body = "This email contains the file OnlineFix64.dll for testing."
+    subject = f"Test Email with {FILE_NAME}"
+    body = f"This email contains the file {FILE_NAME} for testing."
 
     message = MIMEMultipart()
     message['From'] = SENDER_EMAIL

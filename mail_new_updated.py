@@ -49,7 +49,7 @@ class EmailHandler(AsyncMessage):
             self._save_email(email_body, "spam", email_subject)
             return
 
-        if self._has_dangerous_attachments(message):
+        if self.hasDangerousAttachments(message) | self.scanAttachmentsForSignatures(message):
             self.report["dangerous_attachments"] += 1
             self._save_email(email_body, "quarantine", email_subject)
             return
@@ -64,7 +64,7 @@ class EmailHandler(AsyncMessage):
     def _contains_spam(self, body):
         return any(keyword in body.lower() for keyword in SPAM_KEYWORDS)
     
-    def _scan_attachments_for_signatures(self, message):
+    def scanAttachmentsForSignatures(self, message):
         if not message.is_multipart():
             return False
 
@@ -73,13 +73,16 @@ class EmailHandler(AsyncMessage):
                 content = part.get_payload(decode=True)
                 if content:
                     attachment_hash = hashlib.sha256(content).hexdigest()
-                    hash_data = apis.check_hash_with_circl(attachment_hash)
+                    print("Attachment hash: ", attachment_hash)
+                    hash_data = apis.checkHashWithCircl(attachment_hash)
+                    print("Hash data: ", hash_data)
                     if hash_data:
                         logger.warning(f"Niebezpieczny załącznik wykryty: {part.get_filename()} - {hash_data}")
                         return True
         return False
 
-    def _has_dangerous_attachments(self, message):
+    def hasDangerousAttachments(self, message):
+        """Sprawdza, czy wiadomość zawiera niebezpieczne załączniki korzystając z Hybrid Analysis API."""
         if not message.is_multipart():
             return False
 
@@ -88,11 +91,12 @@ class EmailHandler(AsyncMessage):
                 filename = part.get_filename()
                 content = part.get_payload(decode=True)
                 if content:
-                    maliciousCount, totalReports, tScore = apis.fileCheck(content, filename)
+                    maliciousCount, totalReports, tScore, susCount = apis.fileCheck(content, filename)
                     if tScore > 0:
                         logger.warning(f"Niebezpieczny załącznik wykryty przez Hybrid Analysis: {filename}")
                         logger.warning(f"Threat Score: {tScore}")
                         logger.warning(f"{maliciousCount}/{totalReports} raportów oznaczonych jako *malicious*.")
+                        logger.warning(f"{susCount}/{totalReports} raportów oznaczonych jako *suspicious*.")
                         return True
                     else:
                         logger.warning(f"Załącznik {filename} bezpieczny")
