@@ -85,13 +85,17 @@ class EmailHandler(AsyncMessage):
 
         for part in message.walk():
             if part.get_content_disposition() == "attachment":
+                filename = part.get_filename()
                 content = part.get_payload(decode=True)
                 if content:
-                    filename = part.get_filename()
-                    result = apis.check_file_with_hybridanalysis(content, filename)
-                    if result.get("verdict") == "malicious":
+                    maliciousCount, totalReports, tScore = apis.fileCheck(content, filename)
+                    if tScore > 0:
                         logger.warning(f"Niebezpieczny załącznik wykryty przez Hybrid Analysis: {filename}")
+                        logger.warning(f"Threat Score: {tScore}")
+                        logger.warning(f"{maliciousCount}/{totalReports} raportów oznaczonych jako *malicious*.")
                         return True
+                    else:
+                        logger.warning(f"Załącznik {filename} bezpieczny")
         return False
 
     def _has_blacklisted_or_malicious_links(self, body):
