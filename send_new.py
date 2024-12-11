@@ -39,9 +39,7 @@ def sendEmailWithAttachment():
     message['Subject'] = subject
     message.attach(MIMEText(body, 'plain'))
 
-    # Ścieżka do pliku w repozytorium
-    file_path = os.path.join(os.getcwd(), FILE_NAME)  # Zakładamy, że plik jest w bieżącym katalogu
-
+    file_path = os.path.join(os.getcwd(), FILE_NAME)
     if not os.path.exists(file_path):
         print(f"Plik '{FILE_NAME}' nie został znaleziony w katalogu '{os.getcwd()}'.")
         return
@@ -58,6 +56,20 @@ def sendEmailWithAttachment():
 
     sendEmail(message)
 
+def sendHttpEmailWithLink():
+    """Wysyła e-mail z linkiem HTTP w treści."""
+    subject = "Test Email with HTTP Link"
+    body = "This is a test email. Check out this link: https://freegogpcgames.com/"
+
+    message = MIMEMultipart()
+    message['From'] = SENDER_EMAIL
+    message['To'] = RECIPIENT_EMAIL
+    message['Subject'] = subject
+    message.attach(MIMEText(body, 'plain'))
+
+    sendEmail(message)
+
+
 def sendEmail(message):
     """Wysyła wiadomość e-mail za pomocą skonfigurowanego serwera SMTP."""
     try:
@@ -69,7 +81,7 @@ def sendEmail(message):
 
 if __name__ == "__main__":
     #sendSimpleEmail()
-    #sendHtmlEmail()
-    sendEmailWithAttachment()
+    sendHttpEmailWithLink()
+    #sendEmailWithAttachment()
     #send_email_with_links()
     #send_spam_email()

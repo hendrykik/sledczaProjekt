@@ -39,27 +39,27 @@ class EmailHandler(AsyncMessage):
     async def handle_message(self, message):
         self.report["total_emails"] += 1
         email_subject = message.get("Subject", "(No Subject)")
-        try:
-            email_body = message.get_payload(decode=True).decode('utf-8', errors='replace')
-        except AttributeError:
-            email_body = "(No Body)"
+        email_body = self.extractEmailBody(message)
+        attachments = self.extractAttachmentsInfo(message)
+        if attachments:
+            logger.info(f"Załączniki znalezione w e-mailu: {attachments}")
 
         if self._contains_spam(email_body):
             self.report["spam_detected"] += 1
-            self._save_email(email_body, "spam", email_subject)
+            self._save_email(email_body, "spam", email_subject, attachments)
             return
 
         if self.hasDangerousAttachments(message) | self.scanAttachmentsForSignatures(message):
             self.report["dangerous_attachments"] += 1
-            self._save_email(email_body, "quarantine", email_subject)
+            self._save_email(email_body, "quarantine", email_subject, attachments)
             return
 
-        if self._has_blacklisted_or_malicious_links(email_body):
+        if self.hasBlacklistedOrMaliciousLinks(email_body):
             self.report["blacklisted_links"] += 1
-            self._save_email(email_body, "sandbox", email_subject)
+            self._save_email(email_body, "sandbox", email_subject, attachments)
             return
 
-        self._save_email(email_body, "inbox", email_subject)
+        self._save_email(email_body, "inbox", email_subject, attachments)
 
     def _contains_spam(self, body):
         return any(keyword in body.lower() for keyword in SPAM_KEYWORDS)
@@ -102,33 +102,55 @@ class EmailHandler(AsyncMessage):
                         logger.warning(f"Załącznik {filename} bezpieczny")
         return False
 
-    def _has_blacklisted_or_malicious_links(self, body):
-        urls = re.findall(r'http[s]?://\\S+', body)
+    def hasBlacklistedOrMaliciousLinks(self, body):
+        urls = re.findall(r'https?://[^\s<>"]+|www\.[^\s<>"]+', body)
+        print("URLs found in email: ", urls)
         for url in urls:
-            domain = urlparse(url).netloc
-            if domain in BLACKLISTED_DOMAINS or self._check_rbl(domain):
+            if apis.urlCheck(url):
+                print(f"Malicious URL detected: {url}")
                 return True
         return False
 
-    def _check_rbl(self, domain):
-        try:
-            for rbl in RBL_SERVERS:
-                query = f"{domain}.{rbl}"
-                dns.resolver.resolve(query, 'A')
-                return True
-        except dns.resolver.NXDOMAIN:
-            return False
-        except Exception as e:
-            logger.warning(f"Error checking RBL for {domain}: {e}")
-        return False
+    def extractEmailBody(self, message):
+        """Wyodrębnia treść e-maila, obsługując zarówno tekst, jak i HTML."""
+        if message.is_multipart():
+            for part in message.walk():
+                content_type = part.get_content_type()
+                content_disposition = str(part.get("Content-Disposition", ""))
+                
+                # Szukamy części tekstowej
+                if content_type == "text/plain" and "attachment" not in content_disposition:
+                    return part.get_payload(decode=True).decode('utf-8', errors='replace')
+                
+                # Jeśli chcesz używać treści HTML zamiast tekstowej, możesz dodać warunek dla text/html
+                elif content_type == "text/html" and "attachment" not in content_disposition:
+                    return part.get_payload(decode=True).decode('utf-8', errors='replace')
+        else:
+            return message.get_payload(decode=True).decode('utf-8', errors='replace')
 
-    def _save_email(self, content, folder, subject):
+        return "(No Body)"
+    
+    def extractAttachmentsInfo(self, message):
+        """Sprawdza załączniki w wiadomości i zwraca listę nazw plików."""
+        attachments = []
+        if message.is_multipart():
+            for part in message.walk():
+                content_disposition = str(part.get("Content-Disposition", ""))
+                if "attachment" in content_disposition:
+                    filename = part.get_filename() or "(Unnamed Attachment)"
+                    attachments.append(filename)
+        return attachments
+
+    def _save_email(self, content, folder, subject, attachments):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         safe_subject = re.sub(r'[^a-zA-Z0-9_-]', '_', subject)[:50]
         filename = f"{timestamp}_{safe_subject}.txt"
         filepath = os.path.join(EMAIL_DIR, folder, filename)
 
         with open(filepath, "w", encoding="utf-8") as f:
+            f.write(f"Subject: {subject}\n")
+            f.write(f"Attachments: {', '.join(attachments) if attachments else 'None'}\n")
+            f.write("\n")
             f.write(content)
 
         logger.info(f"Email saved to {filepath}")

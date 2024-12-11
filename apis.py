@@ -1,7 +1,8 @@
 import requests
 
 HYBRID_API_KEY = "jjobpld635c09646twoqqvf98eaf8c7bjoeydv5gda5b52cfkc3txfic571c3e0b"
-HYBRID_API_URL = "https://www.hybrid-analysis.com/api/v2/quick-scan/file"
+HYBRID_API_FILE = "https://www.hybrid-analysis.com/api/v2/quick-scan/file"
+HYBRID_API_URL = "https://www.hybrid-analysis.com/api/v2/quick-scan/url"
 HYBRID_REPORT_URL = "https://www.hybrid-analysis.com/api/v2/report/"
 CIRCL_URL = "https://hashlookup.circl.lu/api/"
 
@@ -35,11 +36,11 @@ def checkFileWithHybridanalysis(content, filename):
 
     try:
         response = requests.post(
-            HYBRID_API_URL,
+            HYBRID_API_FILE,
             headers=headers,
             files={
-                "file": (filename, content),  # Plik (nazwa i zawartość)
-                "scan_type": (None, "lookup_ha")   # Parametr "scan_type"
+                "file": (filename, content),
+                "scan_type": (None, "lookup_ha")
             }
         )        
         if response.status_code == 200:
@@ -91,5 +92,32 @@ def fileCheck(file, filename):
     reportIds = response.get("reports", [])
     if reportIds:
         return checkReports(reportIds)
-    return 0, 0, 0
+    return 0, 0, 0, 0
 
+def urlCheck(url):
+    response = checkUrlWithHybridanalysis(url)
+    reportIds = response.get("reports", [])
+    if reportIds:
+        return checkReports(reportIds)
+    return 0, 0, 0, 0
+
+
+def checkUrlWithHybridanalysis(url):
+        headers = {
+            "api-key": HYBRID_API_KEY,
+            "user-agent": "Falcon Sandbox",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        data = {"scan_type": "lookup_ha", "url": url}
+        print(url)
+        try:
+            response = requests.post(f"{HYBRID_API_URL}", headers=headers, data=data)
+            response.raise_for_status()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f"Błąd podczas przesyłania url: {response.status_code} - {response.text}")
+            return {}
+        except requests.RequestException as e:
+            print(f"Błąd połączenia z Hybrid Analysis API: {e}")
+        return {}
