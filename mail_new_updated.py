@@ -14,7 +14,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("EmailHandler")
 
 EMAIL_DIR = "emails"
-SPAM_KEYWORDS = ["win", "money", "urgent"]
+REPORT_FILE = os.path.join(EMAIL_DIR, "report.json")
+SPAM_KEYWORDS = ["win", "money", "urgent", "skibidi", "sigma"]
 DANGEROUS_EXTENSIONS = [".exe", ".bat", ".js"]
 DANGEROUS_URLS_FILE = "dangerous_urls.json"
 RBL_SERVERS = ["zen.spamhaus.org", "b.barracudacentral.org"]
@@ -28,7 +29,7 @@ def loadDangerousUrls():
         with open(DANGEROUS_URLS_FILE, "r", encoding="utf-8") as f:
             try:
                 data = f.read().strip()
-                if not data:  # Sprawdź, czy plik jest pusty
+                if not data:
                     return set()
                 return set(json.loads(data))
             except json.JSONDecodeError:
@@ -41,13 +42,7 @@ DANGEROUS_URLS = loadDangerousUrls()
 class EmailHandler(AsyncMessage):
     def __init__(self):
         super().__init__()
-        self.report = {
-            "total_emails": 0,
-            "spam_detected": 0,
-            "dangerous_attachments": 0,
-            "blacklisted_links": 0,
-            "sandboxed_emails": 0
-        }
+        self.report = self.loadReport()
 
     async def handle_message(self, message):
         self.report["total_emails"] += 1
@@ -60,22 +55,27 @@ class EmailHandler(AsyncMessage):
         logger.info(f"Email body being checked for spam...")
         if self.containsSpam(email_body):
             self.report["spam_detected"] += 1
-            self._save_email(email_body, "spam", email_subject, attachments)
+            self.saveEmail(email_body, "spam", email_subject, attachments)
+            self.saveReport()
             return
 
         logger.info("Checking for dangerous attachments...")
         if self.hasDangerousAttachments(message) | self.scanAttachmentsForSignatures(message):
             self.report["dangerous_attachments"] += 1
-            self._save_email(email_body, "quarantine", email_subject, attachments)
+            self.saveEmail(email_body, "quarantine", email_subject, attachments)
+            self.saveReport()
             return
         
         logger.info("Checking for blacklisted or malicious links...")
         if self.hasBlacklistedOrMaliciousLinks(email_body):
             self.report["blacklisted_links"] += 1
-            self._save_email(email_body, "sandbox", email_subject, attachments)
+            self.report["sandboxed_emails"] += 1
+            self.saveEmail(email_body, "sandbox", email_subject, attachments)
+            self.saveReport()
             return
 
-        self._save_email(email_body, "inbox", email_subject, attachments)
+        self.saveEmail(email_body, "inbox", email_subject, attachments)
+        self.saveReport()
 
     def containsSpam(self, body):
         for keyword in SPAM_KEYWORDS:
@@ -181,7 +181,7 @@ class EmailHandler(AsyncMessage):
                     attachments.append(filename)
         return attachments
 
-    def _save_email(self, content, folder, subject, attachments):
+    def saveEmail(self, content, folder, subject, attachments):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         safe_subject = re.sub(r'[^a-zA-Z0-9_-]', '_', subject)[:50]
         filename = f"{timestamp}_{safe_subject}.txt"
@@ -195,12 +195,30 @@ class EmailHandler(AsyncMessage):
 
         logger.info(f"Email saved to {filepath}")
 
-    def save_report(self):
-        report_path = os.path.join(EMAIL_DIR, "report.json")
-        with open(report_path, "w", encoding="utf-8") as f:
-            json.dump(self.report, f, indent=4)
-
-        logger.info(f"Report saved to {report_path}")
+    def loadReport(self):
+        """Wczytuje raport z pliku, jeśli istnieje."""
+        if os.path.exists(REPORT_FILE):
+            try:
+                with open(REPORT_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Nie udało się wczytać raportu: {e}")
+        return {
+            "total_emails": 0,
+            "spam_detected": 0,
+            "dangerous_attachments": 0,
+            "blacklisted_links": 0,
+            "sandboxed_emails": 0
+        }
+    
+    def saveReport(self):
+        """Zapisuje raport do pliku."""
+        try:
+            with open(REPORT_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.report, f, indent=4)
+            logger.info(f"Raport zapisany do {REPORT_FILE}")
+        except IOError as e:
+            logger.error(f"Nie udało się zapisać raportu: {e}")
 
     def saveDangerousUrls(self):
         """Zapisuje listę niebezpiecznych URL-i do pliku."""
@@ -221,4 +239,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Stopping SMTP server...")
         controller.stop()
-        handler.save_report()
+        handler.saveReport()

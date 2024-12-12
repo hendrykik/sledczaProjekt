@@ -69,6 +69,18 @@ def sendHttpEmailWithLink():
 
     sendEmail(message)
 
+def sendSpamEmail():
+    """Wysyła e-mail z spamem w treści."""
+    subject = "Test Email with HTTP Link"
+    body = "skibidi sigma tiktok 2020 rizz party"
+
+    message = MIMEMultipart()
+    message['From'] = SENDER_EMAIL
+    message['To'] = RECIPIENT_EMAIL
+    message['Subject'] = subject
+    message.attach(MIMEText(body, 'plain'))
+
+    sendEmail(message)
 
 def sendEmail(message):
     """Wysyła wiadomość e-mail za pomocą skonfigurowanego serwera SMTP."""
@@ -85,6 +97,5 @@ def sendEmail(message):
 if __name__ == "__main__":
     #sendSimpleEmail()
     sendHttpEmailWithLink()
-    #sendEmailWithAttachment()
-    #send_email_with_links()
-    #send_spam_email()
+    sendEmailWithAttachment()
+    sendSpamEmail()
