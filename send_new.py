@@ -59,7 +59,7 @@ def sendEmailWithAttachment():
 def sendHttpEmailWithLink():
     """Wysyła e-mail z linkiem HTTP w treści."""
     subject = "Test Email with HTTP Link"
-    body = "This is a test email. Check out this link: https://freegogpcgames.com/"
+    body = "This is a test email. Check out this link: https://elmediasale.com.ua/"
 
     message = MIMEMultipart()
     message['From'] = SENDER_EMAIL
@@ -74,7 +74,10 @@ def sendEmail(message):
     """Wysyła wiadomość e-mail za pomocą skonfigurowanego serwera SMTP."""
     try:
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.send_message(message)
+            try:
+                server.send_message(message)
+            finally:
+                server.quit()
             print(f"Email '{message['Subject']}' sent successfully!")
     except Exception as e:
         print(f"Failed to send email '{message['Subject']}': {e}")

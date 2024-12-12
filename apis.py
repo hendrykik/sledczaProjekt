@@ -109,7 +109,6 @@ def checkUrlWithHybridanalysis(url):
             "Content-Type": "application/x-www-form-urlencoded",
         }
         data = {"scan_type": "lookup_ha", "url": url}
-        print(url)
         try:
             response = requests.post(f"{HYBRID_API_URL}", headers=headers, data=data)
             response.raise_for_status()

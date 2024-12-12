@@ -2,10 +2,8 @@ import hashlib
 from aiosmtpd.controller import Controller
 import logging
 import os
-import dns.resolver
 from aiosmtpd.handlers import AsyncMessage
 from datetime import datetime
-from urllib.parse import urlparse
 import re
 import json
 import logging
@@ -16,14 +14,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("EmailHandler")
 
 EMAIL_DIR = "emails"
-SPAM_KEYWORDS = ["win", "money", "free", "urgent"]
+SPAM_KEYWORDS = ["win", "money", "urgent"]
 DANGEROUS_EXTENSIONS = [".exe", ".bat", ".js"]
-BLACKLISTED_DOMAINS = ["phishing.com", "malware.net"]
+DANGEROUS_URLS_FILE = "dangerous_urls.json"
 RBL_SERVERS = ["zen.spamhaus.org", "b.barracudacentral.org"]
 os.makedirs(os.path.join(EMAIL_DIR, "inbox"), exist_ok=True)
 os.makedirs(os.path.join(EMAIL_DIR, "spam"), exist_ok=True)
 os.makedirs(os.path.join(EMAIL_DIR, "quarantine"), exist_ok=True)
 os.makedirs(os.path.join(EMAIL_DIR, "sandbox"), exist_ok=True)
+
+def loadDangerousUrls():
+    if os.path.exists(DANGEROUS_URLS_FILE):
+        with open(DANGEROUS_URLS_FILE, "r", encoding="utf-8") as f:
+            try:
+                data = f.read().strip()
+                if not data:  # Sprawdź, czy plik jest pusty
+                    return set()
+                return set(json.loads(data))
+            except json.JSONDecodeError:
+                print("Błąd dekodowania JSON w pliku.")
+                return set()
+    return set()
+
+DANGEROUS_URLS = loadDangerousUrls()
 
 class EmailHandler(AsyncMessage):
     def __init__(self):
@@ -44,16 +57,19 @@ class EmailHandler(AsyncMessage):
         if attachments:
             logger.info(f"Załączniki znalezione w e-mailu: {attachments}")
 
-        if self._contains_spam(email_body):
+        logger.info(f"Email body being checked for spam...")
+        if self.containsSpam(email_body):
             self.report["spam_detected"] += 1
             self._save_email(email_body, "spam", email_subject, attachments)
             return
 
+        logger.info("Checking for dangerous attachments...")
         if self.hasDangerousAttachments(message) | self.scanAttachmentsForSignatures(message):
             self.report["dangerous_attachments"] += 1
             self._save_email(email_body, "quarantine", email_subject, attachments)
             return
-
+        
+        logger.info("Checking for blacklisted or malicious links...")
         if self.hasBlacklistedOrMaliciousLinks(email_body):
             self.report["blacklisted_links"] += 1
             self._save_email(email_body, "sandbox", email_subject, attachments)
@@ -61,8 +77,13 @@ class EmailHandler(AsyncMessage):
 
         self._save_email(email_body, "inbox", email_subject, attachments)
 
-    def _contains_spam(self, body):
-        return any(keyword in body.lower() for keyword in SPAM_KEYWORDS)
+    def containsSpam(self, body):
+        for keyword in SPAM_KEYWORDS:
+            if keyword in body.lower():
+                logger.info(f"Spam keyword detected: '{keyword}' in email body.")
+                return True
+        logger.info("No spam keywords detected in email body.")
+        return False
     
     def scanAttachmentsForSignatures(self, message):
         if not message.is_multipart():
@@ -92,7 +113,7 @@ class EmailHandler(AsyncMessage):
                 content = part.get_payload(decode=True)
                 if content:
                     maliciousCount, totalReports, tScore, susCount = apis.fileCheck(content, filename)
-                    if tScore > 0:
+                    if tScore > 20:
                         logger.warning(f"Niebezpieczny załącznik wykryty przez Hybrid Analysis: {filename}")
                         logger.warning(f"Threat Score: {tScore}")
                         logger.warning(f"{maliciousCount}/{totalReports} raportów oznaczonych jako *malicious*.")
@@ -105,10 +126,29 @@ class EmailHandler(AsyncMessage):
     def hasBlacklistedOrMaliciousLinks(self, body):
         urls = re.findall(r'https?://[^\s<>"]+|www\.[^\s<>"]+', body)
         print("URLs found in email: ", urls)
+        maliciousUrlCounter = 0
         for url in urls:
-            if apis.urlCheck(url):
-                print(f"Malicious URL detected: {url}")
-                return True
+            logger.info(f"Checking URL: {url}")
+            if url in DANGEROUS_URLS:
+                logger.warning(f"URL {url} already marked as dangerous in local list.")
+                maliciousUrlCounter += 1
+                continue
+            else:
+                maliciousCount, totalReports, tScore, susCount = apis.urlCheck(url)
+            if tScore > 20:
+                logger.warning(f"Niebezpieczny link wykryty przez Hybrid Analysis: {url}")
+                logger.warning(f"Threat Score: {tScore}")
+                logger.warning(f"{maliciousCount}/{totalReports} raportów oznaczonych jako *malicious*.")
+                logger.warning(f"{susCount}/{totalReports} raportów oznaczonych jako *suspicious*.")
+                DANGEROUS_URLS.add(url)
+                self.saveDangerousUrls()
+                maliciousUrlCounter += 1
+            else:
+                logger.warning(f"link {url} jest bezpieczny")
+        
+        if maliciousUrlCounter > 0:
+            logger.warning(f"Znaleziono {maliciousUrlCounter} niebezpiecznych linków w e-mailu.")
+            return True
         return False
 
     def extractEmailBody(self, message):
@@ -162,11 +202,16 @@ class EmailHandler(AsyncMessage):
 
         logger.info(f"Report saved to {report_path}")
 
+    def saveDangerousUrls(self):
+        """Zapisuje listę niebezpiecznych URL-i do pliku."""
+        with open(DANGEROUS_URLS_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(DANGEROUS_URLS), f, indent=4)
 
+        
 if __name__ == "__main__":
     handler = EmailHandler()
     controller = Controller(handler, hostname='127.0.0.1', port=1025)
-
+    
     try:
         logger.info("Starting SMTP server...")
         controller.start()
