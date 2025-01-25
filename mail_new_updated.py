@@ -7,7 +7,7 @@ from datetime import datetime
 import re
 import json
 import logging
-
+import pandas as pd
 import apis
 
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +15,7 @@ logger = logging.getLogger("EmailHandler")
 
 EMAIL_DIR = "emails"
 REPORT_FILE = os.path.join(EMAIL_DIR, "report.json")
-SPAM_KEYWORDS = ["win", "money", "urgent", "skibidi", "sigma"]
+SPAM_KEYWORDS_FILE = 'spam_words.csv'
 DANGEROUS_EXTENSIONS = [".exe", ".bat", ".js"]
 DANGEROUS_URLS_FILE = "dangerous_urls.json"
 RBL_SERVERS = ["zen.spamhaus.org", "b.barracudacentral.org"]
@@ -37,7 +37,15 @@ def loadDangerousUrls():
                 return set()
     return set()
 
+def loadSpamKeywords(spamKeywordsFile):
+    df = pd.read_csv(spamKeywordsFile)
+
+    print(df.columns)
+    return df['Spam_words'].tolist()
+
+
 DANGEROUS_URLS = loadDangerousUrls()
+SPAM_KEYWORDS = loadSpamKeywords(SPAM_KEYWORDS_FILE)
 
 class EmailHandler(AsyncMessage):
     def __init__(self):
